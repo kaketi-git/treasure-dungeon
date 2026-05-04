@@ -384,11 +384,12 @@ const notReady = room.players.some(p =>
         currentRoomId = roomId; // ← 【追加】
         const room = rooms[roomId];
         room.players.push({
-          id: playerId,
-          name: msg.name || "プレイヤー1",
-          ws,
-          totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
-        });
+  id: playerId,
+  name: msg.name || "プレイヤー1",
+  ws,
+  totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
+  isReady: true // ← 【追加】ホストは常に準備完了扱いにする
+});
         ws.send(JSON.stringify({ type: "joined", roomId, playerId }));
         broadcastRoom(room);
         break;
@@ -419,11 +420,12 @@ const notReady = room.players.some(p =>
         currentRoomId = room.id; // ← 【追加】
 
         room.players.push({
-          id: playerId,
-          name: msg.name || `プレイヤー${room.players.length + 1}`,
-          ws,
-          totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
-        });
+  id: playerId,
+  name: msg.name || `プレイヤー${room.players.length + 1}`,
+  ws,
+  totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
+  isReady: false // ← 【追加】参加者は最初は準備未完了にする
+});
         addLog(room, `👤 ${msg.name} が参加しました`);
         ws.send(JSON.stringify({ type: "joined", roomId: room.id, playerId }));
         broadcastRoom(room);
