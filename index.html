@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>宝箱ダンジョン</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #12121c;
+    --card:      #1a1a2a;
+    --border:    #2e2e4a;
+    --gold:      #c9a84c;
+    --gold-glow: #f0c060;
+    --red:       #c0392b;
+    --red-glow:  #e74c3c;
+    --green:     #27ae60;
+    --blue:      #2980b9;
+    --text:      #e8e0d0;
+    --muted:     #7a7090;
+    --rare:      #9b59b6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Serif JP', serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── 背景パーティクル ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 20%, rgba(201,168,76,.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 80%, rgba(155,89,182,.05) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #app { position: relative; z-index: 1; }
+
+  /* ══════════════════════════════════
+     LOBBY / JOIN SCREEN
+  ══════════════════════════════════ */
+  #screen-lobby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem;
+    gap: 2rem;
+  }
+
+  .title-block {
+    text-align: center;
+  }
+  .title-block h1 {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(2rem, 6vw, 4rem);
+    font-weight: 900;
+    color: var(--gold);
+    text-shadow: 0 0 40px rgba(201,168,76,.5), 0 2px 0 #000;
+    letter-spacing: .08em;
+    line-height: 1.1;
+  }
+  .title-block p {
+    color: var(--muted);
+    margin-top: .5rem;
+    font-size: .95rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+
+  .lobby-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  .lobby-card h2 {
+    font-family: 'Cinzel', serif;
+    font-size: 1.1rem;
+    color: var(--gold);
+    margin-bottom: 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+
+  .input-group {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+    margin-bottom: 1rem;
+  }
+  .input-group label { font-size: .8rem; color: var(--muted); letter-spacing: .1em; }
+  .input-group input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1rem;
+    padding: .7rem 1rem;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .input-group input:focus { border-color: var(--gold); }
+
+  .btn {
+    width: 100%;
+    padding: .8rem 1.2rem;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Cinzel', serif;
+    font-size: .95rem;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: .08em;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: rgba(255,255,255,.08);
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .btn:hover::after { opacity: 1; }
+  .btn:active { transform: scale(.98); }
+
+  .btn-gold {
+    background: linear-gradient(135deg, #b8922a, #e0b84a);
+    color: #1a0f00;
+    box-shadow: 0 4px 20px rgba(201,168,76,.3);
+    margin-bottom: .6rem;
+  }
+  .btn-outline {
+    background: transparent;
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    margin-top: .4rem;
+  }
+  .btn-red {
+    background: linear-gradient(135deg, #922020, #c0392b);
+    color: #fff;
+  }
+  .btn-green {
+    background: linear-gradient(135deg, #1a7a40, #27ae60);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(39,174,96,.3);
+  }
+  .btn-blue {
+    background: linear-gradient(135deg, #1a5080, #2980b9);
+    color: #fff;
+  }
+  .btn:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+  }
+  .btn:disabled:hover::after { opacity: 0; }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.2rem 0;
+    color: var(--muted);
+    font-size: .8rem;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ══════════════════════════════════
+     WAITING ROOM
+  ══════════════════════════════════ */
+  #screen-waiting {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 2rem;
+    gap: 1.5rem;
+  }
+
+  .room-header {
+    text-align: center;
+  }
+  .room-id-badge {
+    display: inline-block;
+    background: var(--card);
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: .4rem 1.2rem;
+    font-family: 'Cinzel', serif;
+    font-size: 1.4rem;
+    color: var(--gold);
+    letter-spacing: .2em;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .room-id-badge:hover { background: rgba(201,168,76,.1); }
+  .room-id-hint { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
+
+  .player-list {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem;
+    width: 100%;
+    max-width: 460px;
+  }
+  .player-list h3 {
+    font-family: 'Cinzel', serif;
+    font-size: .85rem;
+    color: var(--muted);
+    letter-spacing: .12em;
+    margin-bottom: 1rem;
+  }
+  .player-item {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    padding: .55rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .player-item:last-child { border-bottom: none; }
+  .player-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold), #7a5020);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .player-name { font-size: .95rem; }
+  .badge-host {
+    margin-left: auto;
+    background: rgba(201,168,76,.15);
+    color: var(--gold);
+    border: 1px solid rgba(201,168,76,.3);
+    border-radius: 4px;
+    padding: .15rem .5rem;
+    font-size: .7rem;
+    letter-spacing: .08em;
+    font-family: 'Cinzel', serif;
+  }
+
+  /* ══════════════════════════════════
+     GAME SCREEN
+  ══════════════════════════════════ */
+  #screen-game {
+    display: none;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 1rem;
+    gap: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: .8rem 1.2rem;
+  }
+  .game-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1rem;
+    color: var(--gold);
+    letter-spacing: .1em;
+  }
+  .round-info {
+    font-size: .9rem;
+    color: var(--muted);
+  }
+  .round-info span { color: var(--text); font-weight: 700; }
+
+  /* ターン表示 */
+  .turn-banner {
+    background: linear-gradient(135deg, rgba(201,168,76,.15), rgba(201,168,76,.05));
+    border: 1px solid rgba(201,168,76,.4);
+    border-radius: 12px;
+    padding: .8rem 1.4rem;
+    text-align: center;
+    font-family: 'Cinzel', serif;
+    font-size: 1rem;
+    color: var(--gold);
+    transition: all .3s;
+  }
+  .turn-banner.my-turn {
+    background: linear-gradient(135deg, rgba(201,168,76,.25), rgba(240,192,96,.1));
+    border-color: var(--gold-glow);
+    box-shadow: 0 0 20px rgba(201,168,76,.25);
+    animation: pulse-gold 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-gold {
+    0%, 100% { box-shadow: 0 0 20px rgba(201,168,76,.25); }
+    50%       { box-shadow: 0 0 35px rgba(201,168,76,.5); }
+  }
+
+  /* プレイヤーステータス */
+  .players-row {
+    display: flex;
+    gap: .6rem;
+    flex-wrap: wrap;
+  }
+  .player-status-card {
+    flex: 1;
+    min-width: 120px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .7rem .9rem;
+    transition: all .3s;
+  }
+  .player-status-card.active-turn {
+    border-color: var(--gold);
+    box-shadow: 0 0 14px rgba(201,168,76,.3);
+  }
+  .player-status-card.escaped { opacity: .6; border-color: var(--green); }
+  .player-status-card.bombed  { opacity: .5; border-color: var(--red); }
+  .ps-name {
+    font-size: .8rem;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ps-coins {
+    font-family: 'Cinzel', serif;
+    font-size: 1rem;
+    color: var(--gold);
+    margin-top: .15rem;
+  }
+  .ps-round {
+    font-size: .75rem;
+    color: var(--muted);
+  }
+  .ps-badge {
+    font-size: .65rem;
+    padding: .1rem .4rem;
+    border-radius: 4px;
+    margin-top: .3rem;
+    display: inline-block;
+  }
+  .ps-badge.escaped { background: rgba(39,174,96,.2); color: #7dcea0; }
+  .ps-badge.bombed  { background: rgba(192,57,43,.2); color: #f0837a; }
+  .ps-badge.you     { background: rgba(201,168,76,.2); color: var(--gold); }
+
+  /* 宝箱グリッド */
+  .boxes-section { }
+  .boxes-section h3 {
+    font-family: 'Cinzel', serif;
+    font-size: .8rem;
+    color: var(--muted);
+    letter-spacing: .12em;
+    margin-bottom: .7rem;
+  }
+  .boxes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: .7rem;
+  }
+
+  .box-card {
+    aspect-ratio: 1;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+  }
+  .box-card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,.04), transparent);
+  }
+  .box-card.clickable:hover {
+    border-color: var(--gold);
+    transform: translateY(-3px) scale(1.03);
+    box-shadow: 0 8px 20px rgba(201,168,76,.25);
+  }
+  .box-card.clickable:active { transform: scale(.97); }
+
+  .box-card.opened.coin  { border-color: rgba(201,168,76,.5); background: rgba(201,168,76,.08); }
+  .box-card.opened.rare  { border-color: rgba(155,89,182,.5); background: rgba(155,89,182,.08); }
+  .box-card.opened.bomb  { border-color: rgba(192,57,43,.5);  background: rgba(192,57,43,.1);  animation: shake .4s; }
+  .box-card.not-clickable { cursor: default; opacity: .5; }
+
+  @keyframes shake {
+    0%,100%{ transform: translateX(0); }
+    20%{ transform: translateX(-5px) rotate(-2deg); }
+    40%{ transform: translateX(5px) rotate(2deg); }
+    60%{ transform: translateX(-4px); }
+    80%{ transform: translateX(4px); }
+  }
+
+  .box-emoji  { font-size: 1.8rem; line-height: 1; }
+  .box-value  { font-family: 'Cinzel', serif; font-size: .75rem; color: var(--gold); margin-top: .2rem; }
+  .box-lock   { font-size: 1.4rem; color: var(--muted); opacity: .5; }
+
+  /* アクションボタン */
+  .action-row {
+    display: flex;
+    gap: .8rem;
+  }
+  .action-row .btn {
+    flex: 1;
+    font-size: .9rem;
+  }
+
+  /* ログ */
+  .log-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .log-panel h3 {
+    font-family: 'Cinzel', serif;
+    font-size: .8rem;
+    color: var(--muted);
+    letter-spacing: .1em;
+    margin-bottom: .6rem;
+  }
+  .log-item {
+    font-size: .82rem;
+    color: var(--muted);
+    padding: .25rem 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    animation: fadeIn .3s;
+  }
+  .log-item:first-child { color: var(--text); }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ══════════════════════════════════
+     ROUND END / GAME OVER OVERLAY
+  ══════════════════════════════════ */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.75);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+    animation: fadeIn .3s;
+  }
+  .overlay-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 90%;
+    max-width: 420px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.8);
+    text-align: center;
+  }
+  .overlay-card h2 {
+    font-family: 'Cinzel', serif;
+    font-size: 1.5rem;
+    color: var(--gold);
+    margin-bottom: 1.2rem;
+  }
+  .result-list {
+    list-style: none;
+    margin: 1rem 0;
+    text-align: left;
+  }
+  .result-list li {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    padding: .5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .95rem;
+  }
+  .result-rank {
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    width: 2rem;
+    text-align: center;
+    color: var(--muted);
+  }
+  .result-rank.gold   { color: #FFD700; }
+  .result-rank.silver { color: #C0C0C0; }
+  .result-rank.bronze { color: #CD7F32; }
+  .result-coins {
+    margin-left: auto;
+    font-family: 'Cinzel', serif;
+    color: var(--gold);
+  }
+
+  /* ══════════════════════════════════
+     TOAST
+  ══════════════════════════════════ */
+  #toast {
+    position: fixed;
+    bottom: 2rem; left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--red);
+    color: #fff;
+    padding: .7rem 1.6rem;
+    border-radius: 8px;
+    font-size: .9rem;
+    font-family: 'Cinzel', serif;
+    transition: transform .3s;
+    z-index: 200;
+    pointer-events: none;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ══════════════════════════════════
+     SCROLLBAR
+  ══════════════════════════════════ */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══ LOBBY ═══ -->
+  <div id="screen-lobby">
+    <div class="title-block">
+      <h1>🗝 宝箱ダンジョン</h1>
+      <p>Treasure Dungeon · Online Board Game</p>
+    </div>
+
+    <div class="lobby-card">
+      <h2>⚔️ 冒険者の名を入力</h2>
+      <div class="input-group">
+        <label>PLAYER NAME</label>
+        <input id="input-name" type="text" placeholder="名前を入力…" maxlength="12">
+      </div>
+
+      <button class="btn btn-gold" onclick="createRoom()">🏰 部屋を作成する</button>
+
+      <div class="divider">または</div>
+
+      <div class="input-group">
+        <label>ROOM ID</label>
+        <input id="input-room-id" type="text" placeholder="6文字のコード" maxlength="6" style="text-transform:uppercase">
+      </div>
+      <button class="btn btn-outline" onclick="joinRoom()">🚪 部屋に参加する</button>
+    </div>
+
+    <!-- ルール説明 -->
+    <div class="lobby-card" style="max-width:420px; font-size:.88rem; line-height:1.8; color:var(--muted)">
+      <h2>📜 ルール</h2>
+      <p>順番に宝箱を開けるか、脱出を選びます。</p>
+      <p>🪙 コイン／💎 レアアイテム → 獲得コインが増える</p>
+      <p>💣 爆弾 → そのラウンドの獲得物が全て消える！</p>
+      <p>🏃 脱出 → 安全に持ち帰れるが、残りの宝箱は取れない</p>
+      <p style="margin-top:.6rem; color:var(--text)">5ラウンド後に最も多くのコインを持つ者が勝者！</p>
+    </div>
+  </div>
+
+  <!-- ═══ WAITING ROOM ═══ -->
+  <div id="screen-waiting">
+    <div class="room-header">
+      <h1 style="font-family:'Cinzel',serif; color:var(--gold); font-size:1.2rem; margin-bottom:.5rem">🏰 冒険者の間</h1>
+      <div class="room-id-badge" onclick="copyRoomId()" title="クリックでコピー">
+        ROOM: <span id="display-room-id">------</span>
+      </div>
+      <div class="room-id-hint">クリックでルームIDをコピー</div>
+    </div>
+
+    <div class="player-list" id="waiting-players">
+      <h3>🛡 参加者 <span id="waiting-count">0</span>/8</h3>
+    </div>
+
+    <div style="width:100%; max-width:460px;">
+      <button class="btn btn-green" id="btn-start" onclick="startGame()" style="display:none">
+        ⚔️ ゲーム開始！
+      </button>
+      <p id="waiting-msg" style="text-align:center; color:var(--muted); font-size:.85rem; margin-top:.5rem">
+        ホストが開始するまでお待ちください…
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══ GAME ═══ -->
+  <div id="screen-game">
+    <div class="game-header">
+      <div class="game-title">🗝 宝箱ダンジョン</div>
+      <div class="round-info">ラウンド <span id="g-round">1</span> / <span id="g-max-round">5</span></div>
+    </div>
+
+    <div class="turn-banner" id="turn-banner">— 待機中 —</div>
+
+    <div class="players-row" id="players-row"></div>
+
+    <div class="boxes-section">
+      <h3>🗝 宝箱</h3>
+      <div class="boxes-grid" id="boxes-grid"></div>
+    </div>
+
+    <div class="action-row" id="action-row">
+      <button class="btn btn-gold" id="btn-open" onclick="onOpenBox()" disabled>🗝 宝箱を開ける</button>
+      <button class="btn btn-blue" id="btn-escape" onclick="onEscape()" disabled>🏃 脱出する</button>
+    </div>
+
+    <div class="log-panel">
+      <h3>📜 冒険ログ</h3>
+      <div id="log-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ ROUND END OVERLAY ═══ -->
+  <div class="overlay" id="overlay-roundend" style="display:none">
+    <div class="overlay-card">
+      <h2 id="round-end-title">ラウンド終了</h2>
+      <ul class="result-list" id="round-result-list"></ul>
+      <p style="color:var(--muted); font-size:.85rem; margin-top:.8rem">次のラウンドを準備中…</p>
+    </div>
+  </div>
+
+  <!-- ═══ GAME OVER OVERLAY ═══ -->
+  <div class="overlay" id="overlay-gameover" style="display:none">
+    <div class="overlay-card">
+      <h2>🏆 ゲーム終了！</h2>
+      <ul class="result-list" id="gameover-result-list"></ul>
+      <button class="btn btn-gold" style="margin-top:1.2rem" onclick="location.reload()">
+        🔄 もう一度遊ぶ
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══ TOAST ═══ -->
+  <div id="toast"></div>
+
+</div><!-- #app -->
+
+<script>
+// ══════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════
+const WS_URL = location.protocol === "https:"
+  ? `wss://${location.host}`
+  : `ws://${location.hostname}:3000`;
+let ws = null;
+let myPlayerId = localStorage.getItem("playerId") || null;
+let myRoomId   = null;
+let myName     = "";
+let selectedBoxId = null;
+let gameState  = null;
+let prevPhase  = null;
+
+// ══════════════════════════════════════════
+//  WEBSOCKET
+// ══════════════════════════════════════════
+function connectWS(callback) {
+  ws = new WebSocket(WS_URL);
+  ws.onopen  = () => callback && callback();
+  ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+  ws.onerror = () => showToast("サーバーに接続できません");
+  ws.onclose = () => {
+    showToast("接続が切れました。再接続中…");
+    setTimeout(() => reconnect(), 3000);
+  };
+}
+
+function reconnect() {
+  if (!myPlayerId || !myRoomId) return;
+  connectWS(() => {
+    send({ type: "reconnect", playerId: myPlayerId, roomId: myRoomId });
+  });
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+// ══════════════════════════════════════════
+//  MESSAGE HANDLER
+// ══════════════════════════════════════════
+function handleMessage(msg) {
+  switch (msg.type) {
+    case "joined":
+      myPlayerId = msg.playerId;
+      myRoomId   = msg.roomId;
+      localStorage.setItem("playerId", myPlayerId);
+      document.getElementById("display-room-id").textContent = myRoomId;
+      showScreen("waiting");
+      break;
+
+    case "state":
+      gameState = msg.state;
+      render();
+      break;
+
+    case "error":
+      showToast(msg.message);
+      break;
+  }
+}
+
+// ══════════════════════════════════════════
+//  LOBBY ACTIONS
+// ══════════════════════════════════════════
+function createRoom() {
+  myName = document.getElementById("input-name").value.trim() || "名無し";
+  connectWS(() => {
+    send({ type: "createRoom", name: myName, playerId: myPlayerId });
+  });
+}
+
+function joinRoom() {
+  const roomId = document.getElementById("input-room-id").value.trim().toUpperCase();
+  myName = document.getElementById("input-name").value.trim() || "名無し";
+  if (!roomId) { showToast("ルームIDを入力してください"); return; }
+  connectWS(() => {
+    send({ type: "joinRoom", roomId, name: myName, playerId: myPlayerId });
+  });
+}
+
+function startGame() {
+  send({ type: "startGame" });
+}
+
+function copyRoomId() {
+  navigator.clipboard.writeText(myRoomId).then(() => showToast("コピーしました: " + myRoomId));
+}
+
+// ══════════════════════════════════════════
+//  GAME ACTIONS
+// ══════════════════════════════════════════
+function onOpenBox() {
+  if (selectedBoxId === null) { showToast("宝箱を選択してください"); return; }
+  send({ type: "openBox", boxId: selectedBoxId });
+  selectedBoxId = null;
+  renderBoxes();
+}
+
+function onEscape() {
+  send({ type: "escape" });
+}
+
+function selectBox(id) {
+  if (!isMyTurn()) return;
+  const box = gameState.boxes.find(b => b.id === id);
+  if (!box || box.opened) return;
+  selectedBoxId = (selectedBoxId === id) ? null : id;
+  renderBoxes();
+}
+
+function isMyTurn() {
+  return gameState && gameState.currentTurn === myPlayerId && gameState.phase === "playing";
+}
+
+function getMe() {
+  return gameState && gameState.players.find(p => p.id === myPlayerId);
+}
+
+function isActiveMe() {
+  const me = getMe();
+  return me && !me.escaped && !me.eliminatedThisRound && !me.eliminated;
+}
+
+// ══════════════════════════════════════════
+//  RENDER
+// ══════════════════════════════════════════
+function render() {
+  if (!gameState) return;
+  const { phase } = gameState;
+
+  // 画面切り替え
+  if (phase === "lobby") {
+    showScreen("waiting");
+    renderWaiting();
+  } else if (phase === "playing" || phase === "roundEnd") {
+    showScreen("game");
+    renderGame();
+  } else if (phase === "gameOver") {
+    showScreen("game");
+    renderGame();
+    showGameOver();
+  }
+
+  // ラウンドエンドオーバーレイ
+  if (phase === "roundEnd" && prevPhase === "playing") {
+    showRoundEnd();
+  }
+  if (phase === "playing") {
+    document.getElementById("overlay-roundend").style.display = "none";
+  }
+
+  prevPhase = phase;
+}
+
+// ── Waiting ──
+function renderWaiting() {
+  if (!gameState) return;
+  const { players, host } = gameState;
+  document.getElementById("waiting-count").textContent = players.length;
+
+  const container = document.getElementById("waiting-players");
+  container.innerHTML = `<h3>🛡 参加者 <span>${players.length}</span>/8</h3>`;
+  players.forEach(p => {
+    const item = document.createElement("div");
+    item.className = "player-item";
+    item.innerHTML = `
+      <div class="player-avatar">${p.name[0]}</div>
+      <div class="player-name">${escHtml(p.name)}${p.id === myPlayerId ? ' <span style="color:var(--gold);font-size:.75rem">(あなた)</span>' : ''}</div>
+      ${p.id === host ? '<span class="badge-host">HOST</span>' : ''}
+    `;
+    container.appendChild(item);
+  });
+
+  const isHost = gameState.host === myPlayerId;
+  document.getElementById("btn-start").style.display = isHost ? "block" : "none";
+  document.getElementById("waiting-msg").style.display = isHost ? "none" : "block";
+}
+
+// ── Game ──
+function renderGame() {
+  if (!gameState) return;
+  document.getElementById("g-round").textContent = gameState.round;
+  document.getElementById("g-max-round").textContent = gameState.maxRounds;
+
+  renderTurnBanner();
+  renderPlayers();
+  renderBoxes();
+  renderActions();
+  renderLog();
+}
+
+function renderTurnBanner() {
+  const banner = document.getElementById("turn-banner");
+  const myTurn = isMyTurn();
+  const currentPlayer = gameState.players.find(p => p.id === gameState.currentTurn);
+
+  if (gameState.phase === "roundEnd") {
+    banner.textContent = "🏁 ラウンド終了";
+    banner.className = "turn-banner";
+    return;
+  }
+
+  if (myTurn) {
+    banner.textContent = "⚔️ あなたのターンです！宝箱を選んでください";
+    banner.className = "turn-banner my-turn";
+  } else if (currentPlayer) {
+    banner.textContent = `⏳ ${currentPlayer.name} のターン…`;
+    banner.className = "turn-banner";
+  } else {
+    banner.textContent = "— 待機中 —";
+    banner.className = "turn-banner";
+  }
+}
+
+function renderPlayers() {
+  const row = document.getElementById("players-row");
+  row.innerHTML = "";
+  gameState.players.forEach(p => {
+    const isActive = gameState.currentTurn === p.id;
+    const card = document.createElement("div");
+    card.className = "player-status-card" +
+      (isActive ? " active-turn" : "") +
+      (p.escaped ? " escaped" : "") +
+      (p.eliminatedThisRound ? " bombed" : "");
+
+    let badge = "";
+    if (p.id === myPlayerId) badge += `<span class="ps-badge you">YOU</span>`;
+    if (p.escaped) badge += `<span class="ps-badge escaped">脱出済</span>`;
+    if (p.eliminatedThisRound) badge += `<span class="ps-badge bombed">💣爆死</span>`;
+
+    card.innerHTML = `
+      <div class="ps-name">${escHtml(p.name)}</div>
+      <div class="ps-coins">🪙 ${p.totalCoins}</div>
+      <div class="ps-round">今回 +${p.roundCoins || 0}</div>
+      ${badge}
+    `;
+    row.appendChild(card);
+  });
+}
+
+function renderBoxes() {
+  const grid = document.getElementById("boxes-grid");
+  grid.innerHTML = "";
+  if (!gameState.boxes) return;
+
+  gameState.boxes.forEach(box => {
+    const el = document.createElement("div");
+    const canClick = isMyTurn() && !box.opened && isActiveMe();
+    const isSelected = selectedBoxId === box.id;
+
+    el.className = "box-card" + (canClick ? " clickable" : " not-clickable");
+    if (box.opened && box.content) {
+      el.classList.add("opened", box.content.type);
+    }
+    if (isSelected) {
+      el.style.borderColor = "var(--gold-glow)";
+      el.style.boxShadow = "0 0 20px rgba(240,192,96,.5)";
+    }
+
+    if (box.opened && box.content) {
+      el.innerHTML = `
+        <div class="box-emoji">${box.content.emoji}</div>
+        <div class="box-value">${box.content.type === "bomb" ? "爆発！" : "+" + box.content.value}</div>
+      `;
+    } else {
+      el.innerHTML = `<div class="box-lock">📦</div>`;
+    }
+
+    if (canClick) el.onclick = () => selectBox(box.id);
+    grid.appendChild(el);
+  });
+}
+
+function renderActions() {
+  const myTurn = isMyTurn();
+  document.getElementById("btn-open").disabled = !myTurn || selectedBoxId === null;
+  document.getElementById("btn-escape").disabled = !myTurn;
+  document.getElementById("action-row").style.opacity = myTurn ? "1" : "0.4";
+}
+
+function renderLog() {
+  const list = document.getElementById("log-list");
+  list.innerHTML = "";
+  (gameState.log || []).forEach((entry, i) => {
+    const item = document.createElement("div");
+    item.className = "log-item";
+    item.textContent = entry.message;
+    list.appendChild(item);
+  });
+}
+
+// ── Round End Overlay ──
+function showRoundEnd() {
+  const overlay = document.getElementById("overlay-roundend");
+  const title   = document.getElementById("round-end-title");
+  const list    = document.getElementById("round-result-list");
+
+  title.textContent = `ラウンド ${gameState.round} 終了`;
+  list.innerHTML = "";
+
+  const sorted = [...gameState.players].sort((a, b) => b.totalCoins - a.totalCoins);
+  sorted.forEach((p, i) => {
+    const li = document.createElement("li");
+    const rankClass = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+    li.innerHTML = `
+      <span class="result-rank ${rankClass}">${["🥇","🥈","🥉"][i] || (i+1)+"."}</span>
+      <span>${escHtml(p.name)}${p.id === myPlayerId ? " (あなた)" : ""}</span>
+      <span class="result-coins">🪙 ${p.totalCoins}</span>
+    `;
+    list.appendChild(li);
+  });
+
+  overlay.style.display = "flex";
+}
+
+// ── Game Over Overlay ──
+function showGameOver() {
+  const overlay = document.getElementById("overlay-gameover");
+  const list    = document.getElementById("gameover-result-list");
+  list.innerHTML = "";
+
+  const sorted = [...gameState.players].sort((a, b) => b.totalCoins - a.totalCoins);
+  sorted.forEach((p, i) => {
+    const li = document.createElement("li");
+    const rankClass = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+    li.innerHTML = `
+      <span class="result-rank ${rankClass}">${["🥇","🥈","🥉"][i] || (i+1)+"."}</span>
+      <span>${escHtml(p.name)}${p.id === myPlayerId ? " (あなた)" : ""}</span>
+      <span class="result-coins">🪙 ${p.totalCoins}</span>
+    `;
+    list.appendChild(li);
+  });
+
+  overlay.style.display = "flex";
+}
+
+// ══════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════
+function showScreen(name) {
+  ["lobby", "waiting", "game"].forEach(s => {
+    document.getElementById(`screen-${s}`).style.display = "none";
+  });
+  document.getElementById(`screen-${name}`).style.display = "flex";
+}
+
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 2800);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+// ── 宝箱選択状態リセット (ターンが変わったとき) ──
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && isMyTurn() && selectedBoxId !== null) onOpenBox();
+  if (e.key === "Escape") { selectedBoxId = null; renderBoxes(); }
+});
+</script>
+</body>
+</html>
