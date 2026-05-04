@@ -865,10 +865,10 @@ function render() {
 function renderWaiting() {
   if (!gameState) return;
   const { players, host } = gameState;
-  document.getElementById("waiting-count").textContent = players.length;
 
   const container = document.getElementById("waiting-players");
-  container.innerHTML = `<h3>🛡 参加者 <span>${players.length}</span>/8</h3>`;
+  // 以下の行で <span> に id="waiting-count" を付与し、最初の更新行を削除します
+  container.innerHTML = `<h3>🛡 参加者 <span id="waiting-count">${players.length}</span>/8</h3>`;
   
   let allReady = true;
 
