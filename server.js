@@ -49,7 +49,7 @@ function createRoom(hostId, hostName) {
   const roomId = generateRoomId();
   rooms[roomId] = {
     id: roomId,
-    phase: "lobby",       // lobby | playing | roundEnd | gameOver
+    phase: "lobby",
     players: [],
     host: hostId,
     round: 0,
@@ -57,6 +57,7 @@ function createRoom(hostId, hostName) {
     boxes: [],
     openedBoxes: [],
     currentTurnIndex: 0,
+    startPlayerIndex: -1, // ← 【追加】スタートプレイヤーのインデックス管理
     escapedThisRound: [],
     eliminatedThisRound: [],
     log: [],
@@ -76,17 +77,31 @@ function getPlayer(room, playerId) {
 
 // ========== 宝箱生成 ==========
 function generateBoxes() {
-  const pool = [...BOX_CONTENTS];
-  // シャッフル
-  for (let i = pool.length - 1; i > 0; i--) {
+  const coins = BOX_CONTENTS.filter(c => c.type === 'coin');
+  const bombs = BOX_CONTENTS.filter(c => c.type === 'bomb');
+  const rares = BOX_CONTENTS.filter(c => c.type === 'rare');
+
+  // 【追加】最低1つずつコインと爆弾を確定させる
+  const pickedCoin = coins.splice(Math.floor(Math.random() * coins.length), 1)[0];
+  const pickedBomb = bombs.splice(Math.floor(Math.random() * bombs.length), 1)[0];
+
+  // 残りから6つ選ぶ
+  const remainingPool = [...coins, ...bombs, ...rares];
+  for (let i = remainingPool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+    [remainingPool[i], remainingPool[j]] = [remainingPool[j], remainingPool[i]];
   }
-  return pool.slice(0, MAX_BOXES_PER_ROUND).map((item, idx) => ({
-    id: idx,
-    opened: false,
-    content: null,
-    _content: item,
+  const pickedOthers = remainingPool.slice(0, MAX_BOXES_PER_ROUND - 2);
+
+  // 確定枠とランダム枠を合わせて再度シャッフル
+  const finalPool = [pickedCoin, pickedBomb, ...pickedOthers];
+  for (let i = finalPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [finalPool[i], finalPool[j]] = [finalPool[j], finalPool[i]];
+  }
+
+  return finalPool.map((item, idx) => ({
+    id: idx, opened: false, content: null, _content: item,
   }));
 }
 
@@ -100,7 +115,6 @@ function startRound(room) {
   room.eliminatedThisRound = [];
   room.currentTurnIndex = 0;
 
-  // 生存プレイヤーをターン順にリセット
   const alive = room.players.filter(p => !p.eliminated);
   alive.forEach(p => {
     p.roundCoins = 0;
@@ -108,8 +122,16 @@ function startRound(room) {
     p.eliminatedThisRound = false;
   });
 
-  room.turnOrder = alive.map(p => p.id);
-  addLog(room, `⚔️ ラウンド ${room.round} 開始！`);
+  // 【追加】スタートプレイヤーを毎ターンローテーションさせる
+  room.startPlayerIndex = (room.startPlayerIndex + 1) % alive.length;
+  const ordered = [
+    ...alive.slice(room.startPlayerIndex),
+    ...alive.slice(0, room.startPlayerIndex)
+  ];
+  room.turnOrder = ordered.map(p => p.id);
+  
+  const startPlayer = getPlayer(room, room.turnOrder[0]);
+  addLog(room, `⚔️ ラウンド ${room.round} 開始！ (先攻: ${startPlayer.name})`);
 }
 
 function addLog(room, message) {
@@ -128,12 +150,21 @@ function broadcastRoom(room) {
 }
 
 function buildPublicState(room) {
+  // 【追加】未開封の宝箱の中身をカウントする（ヒント機能用）
+  const unopened = room.boxes ? room.boxes.filter(b => !b.opened).map(b => b._content.type) : [];
+  const hints = {
+    coin: unopened.filter(t => t === 'coin').length,
+    rare: unopened.filter(t => t === 'rare').length,
+    bomb: unopened.filter(t => t === 'bomb').length,
+  };
+
   return {
     id: room.id,
     phase: room.phase,
     round: room.round,
     maxRounds: room.maxRounds,
     host: room.host,
+    hints: hints, // ← 【追加】ヒントをクライアントに送る
     players: room.players.map(p => ({
       id: p.id,
       name: p.name,
@@ -142,6 +173,7 @@ function buildPublicState(room) {
       escaped: p.escaped,
       eliminated: p.eliminated,
       eliminatedThisRound: p.eliminatedThisRound,
+      isReady: p.isReady, // ← 【追加】準備完了フラグ
       connected: p.ws && p.ws.readyState === WebSocket.OPEN,
     })),
     boxes: room.boxes.map(b => ({
@@ -203,12 +235,17 @@ function openBox(room, playerId, boxId) {
   box.content = box._content;
   room.openedBoxes.push(box);
 
-  if (box._content.type === "bomb") {
-    // 爆弾！このラウンドの獲得物全ロスト
-    player.roundCoins = 0;
+if (box._content.type === "bomb") {
+    if (player.roundCoins === 0) {
+      // 【追加】獲得コイン0の時に爆弾を引いたペナルティ
+      player.totalCoins = Math.max(0, player.totalCoins - 10);
+      addLog(room, `💣 ${player.name} は手ぶらで ${box._content.emoji} を引いた！所持コインから10失った！`);
+    } else {
+      player.roundCoins = 0;
+      addLog(room, `💣 ${player.name} が ${box._content.emoji} を引いた！ラウンド獲得物消滅！`);
+    }
     player.eliminatedThisRound = true;
     room.eliminatedThisRound.push(playerId);
-    addLog(room, `💣 ${player.name} が ${box._content.emoji}${box._content.label} を引いた！ラウンド獲得物消滅！`);
   } else {
     player.roundCoins += box._content.value;
     addLog(room, `${player.name} が ${box._content.emoji}${box._content.label}（+${box._content.value}）を獲得！`);
@@ -299,6 +336,39 @@ wss.on("connection", (ws) => {
     try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
+
+// ===== 準備完了の切り替え (switch文の中に追加) =====
+      case "toggleReady": {
+        const room = rooms[currentRoomId];
+        if (!room || room.phase !== "lobby") return;
+        const player = getPlayer(room, playerId);
+        if (player && room.host !== playerId) {
+          player.isReady = !player.isReady;
+          broadcastRoom(room);
+        }
+        break;
+      }
+
+      // ===== ゲーム開始 (startGameの判定を以下のように修正) =====
+      case "startGame": {
+        const room = rooms[currentRoomId];
+        if (!room) return;
+        if (room.host !== playerId) return;
+        
+        // 【追加】ホスト以外の全員が準備完了しているかチェック
+        const notReady = room.players.some(p => p.id !== room.host && !p.isReady);
+        if (notReady) {
+          ws.send(JSON.stringify({ type: "error", message: "全員が準備完了になるまで開始できません" }));
+          return;
+        }
+        if (room.players.length < 2) {
+          ws.send(JSON.stringify({ type: "error", message: "2人以上必要です" }));
+          return;
+        }
+        startRound(room);
+        broadcastRoom(room);
+        break;
+      }
 
       // ===== 部屋を作成 =====
       case "createRoom": {
