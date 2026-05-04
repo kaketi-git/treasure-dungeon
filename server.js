@@ -288,8 +288,11 @@ function endGame(room) {
 }
 
 // ========== WebSocket ハンドラ ==========
+// server.js の 217行目付近からの WebSocket ハンドラを以下のように修正します
+
 wss.on("connection", (ws) => {
   let playerId = null;
+  let currentRoomId = null; // ← 【追加】この接続が現在いるルームIDを直接保持する
 
   ws.on("message", (raw) => {
     let msg;
@@ -301,16 +304,13 @@ wss.on("connection", (ws) => {
       case "createRoom": {
         playerId = msg.playerId || generateRoomId() + "_p";
         const roomId = createRoom(playerId, msg.name);
+        currentRoomId = roomId; // ← 【追加】
         const room = rooms[roomId];
         room.players.push({
           id: playerId,
           name: msg.name || "プレイヤー1",
           ws,
-          totalCoins: 0,
-          roundCoins: 0,
-          escaped: false,
-          eliminated: false,
-          eliminatedThisRound: false,
+          totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
         });
         ws.send(JSON.stringify({ type: "joined", roomId, playerId }));
         broadcastRoom(room);
@@ -332,16 +332,20 @@ wss.on("connection", (ws) => {
           ws.send(JSON.stringify({ type: "error", message: "部屋が満員です" }));
           return;
         }
-        playerId = msg.playerId || generateRoomId() + "_p";
+
+        // ▼ 【修正】同じブラウザの別タブでテストした時のID重複バグを防ぐ
+        let joinPlayerId = msg.playerId;
+        if (!joinPlayerId || room.players.some(p => p.id === joinPlayerId)) {
+          joinPlayerId = generateRoomId() + "_p";
+        }
+        playerId = joinPlayerId;
+        currentRoomId = room.id; // ← 【追加】
+
         room.players.push({
           id: playerId,
           name: msg.name || `プレイヤー${room.players.length + 1}`,
           ws,
-          totalCoins: 0,
-          roundCoins: 0,
-          escaped: false,
-          eliminated: false,
-          eliminatedThisRound: false,
+          totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
         });
         addLog(room, `👤 ${msg.name} が参加しました`);
         ws.send(JSON.stringify({ type: "joined", roomId: room.id, playerId }));
@@ -349,9 +353,9 @@ wss.on("connection", (ws) => {
         break;
       }
 
-      // ===== ゲーム開始（ホストのみ） =====
+      // ===== 以下、getRoomByPlayer を使わず rooms[currentRoomId] を使うように一貫して修正 =====
       case "startGame": {
-        const room = getRoomByPlayer(playerId);
+        const room = rooms[currentRoomId]; // ← 【修正】
         if (!room) return;
         if (room.host !== playerId) {
           ws.send(JSON.stringify({ type: "error", message: "ホストのみ開始できます" }));
@@ -366,9 +370,8 @@ wss.on("connection", (ws) => {
         break;
       }
 
-      // ===== 宝箱を開ける =====
       case "openBox": {
-        const room = getRoomByPlayer(playerId);
+        const room = rooms[currentRoomId]; // ← 【修正】
         if (!room || room.phase !== "playing") return;
         const result = openBox(room, playerId, msg.boxId);
         if (result.error) {
@@ -379,9 +382,8 @@ wss.on("connection", (ws) => {
         break;
       }
 
-      // ===== 脱出 =====
       case "escape": {
-        const room = getRoomByPlayer(playerId);
+        const room = rooms[currentRoomId]; // ← 【修正】
         if (!room || room.phase !== "playing") return;
         const result = escape(room, playerId);
         if (result.error) {
@@ -392,11 +394,11 @@ wss.on("connection", (ws) => {
         break;
       }
 
-      // ===== 再接続 =====
       case "reconnect": {
         playerId = msg.playerId;
         const room = rooms[msg.roomId];
         if (!room) return;
+        currentRoomId = room.id; // ← 【追加】
         const player = getPlayer(room, playerId);
         if (player) {
           player.ws = ws;
@@ -409,8 +411,8 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    if (!playerId) return;
-    const room = getRoomByPlayer(playerId);
+    if (!playerId || !currentRoomId) return; // ← 【修正】
+    const room = rooms[currentRoomId];       // ← 【修正】
     if (!room) return;
     const player = getPlayer(room, playerId);
     if (player) {

@@ -779,6 +779,7 @@ function selectBox(id) {
   if (!box || box.opened) return;
   selectedBoxId = (selectedBoxId === id) ? null : id;
   renderBoxes();
+  renderActions(); // ← 【追加】この行を追加してボタンの表示を更新する
 }
 
 function isMyTurn() {
