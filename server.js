@@ -123,7 +123,6 @@ function startRound(room) {
   });
 
   // 【追加】スタートプレイヤーを毎ターンローテーションさせる
-const alive = room.players.filter(p => !p.eliminated);
 if (alive.length === 0) return; // 安全策を追加
 room.startPlayerIndex = (room.startPlayerIndex + 1) % alive.length;
   const ordered = [
