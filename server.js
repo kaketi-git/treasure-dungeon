@@ -432,21 +432,6 @@ const notReady = room.players.some(p =>
       }
 
       // ===== 以下、getRoomByPlayer を使わず rooms[currentRoomId] を使うように一貫して修正 =====
-      case "startGame": {
-        const room = rooms[currentRoomId]; // ← 【修正】
-        if (!room) return;
-        if (room.host !== playerId) {
-          ws.send(JSON.stringify({ type: "error", message: "ホストのみ開始できます" }));
-          return;
-        }
-        if (room.players.length < 2) {
-          ws.send(JSON.stringify({ type: "error", message: "2人以上必要です" }));
-          return;
-        }
-        startRound(room);
-        broadcastRoom(room);
-        break;
-      }
 
       case "openBox": {
         const room = rooms[currentRoomId]; // ← 【修正】
