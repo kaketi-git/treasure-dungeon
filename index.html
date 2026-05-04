@@ -800,7 +800,7 @@ function copyRoomId() {
 function onOpenBox() {
   if (selectedBoxId === null) { showToast("宝箱を選択してください"); return; }
   send({ type: "openBox", boxId: selectedBoxId });
-  selectedBoxId = null;
+  selectedBoxId = null; // ここでリセット
   renderBoxes();
 }
 

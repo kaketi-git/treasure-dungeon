@@ -123,7 +123,9 @@ function startRound(room) {
   });
 
   // 【追加】スタートプレイヤーを毎ターンローテーションさせる
-  room.startPlayerIndex = (room.startPlayerIndex + 1) % alive.length;
+const alive = room.players.filter(p => !p.eliminated);
+if (alive.length === 0) return; // 安全策を追加
+room.startPlayerIndex = (room.startPlayerIndex + 1) % alive.length;
   const ordered = [
     ...alive.slice(room.startPlayerIndex),
     ...alive.slice(0, room.startPlayerIndex)
@@ -212,7 +214,9 @@ function advanceTurn(room) {
 
 function isActivePlayer(room, playerId) {
   const p = getPlayer(room, playerId);
-  return p && !p.eliminated && !p.escaped && !p.eliminatedThisRound;
+  // 修正: 接続が切れているプレイヤーも「アクティブではない」とみなしてスキップさせる
+  return p && !p.eliminated && !p.escaped && !p.eliminatedThisRound && 
+         (p.ws && p.ws.readyState === WebSocket.OPEN);
 }
 
 function getCurrentPlayer(room) {
@@ -356,7 +360,11 @@ wss.on("connection", (ws) => {
         if (room.host !== playerId) return;
         
         // 【追加】ホスト以外の全員が準備完了しているかチェック
-        const notReady = room.players.some(p => p.id !== room.host && !p.isReady);
+const notReady = room.players.some(p => 
+  p.id !== room.host && 
+  !p.isReady && 
+  (p.ws && p.ws.readyState === WebSocket.OPEN)
+);
         if (notReady) {
           ws.send(JSON.stringify({ type: "error", message: "全員が準備完了になるまで開始できません" }));
           return;
