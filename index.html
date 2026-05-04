@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>宝箱ダンジョン</title>
+<title>TREASURE DUNGEON</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -576,7 +576,7 @@
   <!-- ═══ LOBBY ═══ -->
   <div id="screen-lobby">
     <div class="title-block">
-      <h1>🗝 宝箱ダンジョン</h1>
+      <h1>🗝 TREASURE DUNGEON</h1>
       <p>Treasure Dungeon · Online Board Game</p>
     </div>
 
@@ -640,7 +640,7 @@
   <!-- ═══ GAME ═══ -->
   <div id="screen-game">
     <div class="game-header">
-      <div class="game-title">🗝 宝箱ダンジョン</div>
+      <div class="game-title">🗝 TREASURE DUNGEON</div>
       <div class="round-info">ラウンド <span id="g-round">1</span> / <span id="g-max-round">5</span></div>
     </div>
 
@@ -862,56 +862,48 @@ function render() {
 }
 
 // ── Waiting ──
+// ── Waiting ──
 function renderWaiting() {
   if (!gameState) return;
   const { players, host } = gameState;
 
   const container = document.getElementById("waiting-players");
-  // 以下の行で <span> に id="waiting-count" を付与し、最初の更新行を削除します
   container.innerHTML = `<h3>🛡 参加者 <span id="waiting-count">${players.length}</span>/8</h3>`;
-  
-  let allReady = true;
 
   players.forEach(p => {
-    const item = document.createElement("div");
-    item.className = "player-item";
-    
-    // バッジの判定（ホストか、準備完了か）
-    let badge = "";
-    if (p.id === host) {
-      badge = '<span class="badge-host">HOST</span>';
-    } else if (p.isReady) {
-      badge = '<span class="badge-ready">READY</span>';
-    } else {
-      allReady = false;
-    }
-
-    item.innerHTML = `
-      <div class="player-avatar">${p.name[0]}</div>
-      <div class="player-name">${escHtml(p.name)}${p.id === myPlayerId ? ' <span style="color:var(--gold);font-size:.75rem">(あなた)</span>' : ''}</div>
-      ${badge}
+    const div = document.createElement("div");
+    div.className = "player-item";
+    // 修正: p.isReady を参照
+    div.innerHTML = `
+      <span>${p.id === host ? "👑" : "👤"} ${escHtml(p.name)}</span>
+      ${p.isReady ? '<span class="badge-ready">READY</span>' : ""}
     `;
-    container.appendChild(item);
+    container.appendChild(div);
   });
 
-  const isHost = gameState.host === myPlayerId;
+  // ボタン表示の制御
   const btnStart = document.getElementById("btn-start");
   const btnReady = document.getElementById("btn-ready");
-  const waitMsg = document.getElementById("waiting-msg");
+  const isHost = (myPlayerId === host);
 
   if (isHost) {
     btnStart.style.display = "block";
-    btnStart.disabled = players.length < 2 || !allReady; // 全員READYになるまで押せない
-    btnStart.innerHTML = btnStart.disabled ? "⏳ 全員の準備を待っています..." : "⚔️ ゲーム開始！";
     btnReady.style.display = "none";
-    waitMsg.style.display = "none";
+    // 全員準備完了（ホスト除く）なら開始可能
+    const allReady = players.every(p => p.id === host || p.isReady);
+    btnStart.disabled = !allReady || players.length < 2;
   } else {
     btnStart.style.display = "none";
     btnReady.style.display = "block";
     const me = players.find(p => p.id === myPlayerId);
-    btnReady.innerHTML = me?.isReady ? "❌ 準備完了を解除" : "✅ 準備完了にする";
-    btnReady.className = me?.isReady ? "btn btn-outline" : "btn btn-green";
-    waitMsg.style.display = "block";
+    btnReady.textContent = me && me.isReady ? "✅ 準備完了を解除" : "👍 準備完了にする";
+  }
+}
+
+function leaveRoom() {
+  if (confirm("部屋を離れますか？")) {
+    socket.emit("leave-room");
+    location.reload(); // ページをリロードして初期画面に戻る
   }
 }
 
@@ -1110,6 +1102,14 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter" && isMyTurn() && selectedBoxId !== null) onOpenBox();
   if (e.key === "Escape") { selectedBoxId = null; renderBoxes(); }
 });
+
+socket.on("room-closed", (message) => {
+  alert(message);
+  location.reload();
+});
+
 </script>
 </body>
 </html>
+
+

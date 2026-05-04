@@ -352,6 +352,24 @@ wss.on("connection", (ws) => {
         break;
       }
 
+// switch文の中に追加する例
+case "leaveRoom": {
+  const room = rooms[currentRoomId];
+  if (!room) return;
+  
+  if (playerId === room.host) {
+    // ホスト退出なら全員に通知して部屋削除
+    room.players.forEach(p => {
+      if (p.ws) p.ws.send(JSON.stringify({ type: "error", message: "ホストが退室したため解散しました" }));
+    });
+    delete rooms[currentRoomId];
+  } else {
+    room.players = room.players.filter(p => p.id !== playerId);
+    broadcastRoom(room);
+  }
+  break;
+}
+
       // ===== ゲーム開始 (startGameの判定を以下のように修正) =====
       case "startGame": {
         const room = rooms[currentRoomId];
