@@ -6,47 +6,42 @@ const path = require("path");
 const server = http.createServer((req, res) => {
   const filePath = path.join(__dirname, "index.html");
   fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404);
-      res.end("Not found");
-      return;
-    }
+    if (err) { res.writeHead(404); res.end("Not found"); return; }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(data);
   });
 });
 
 const wss = new WebSocket.Server({ server });
-
 const PORT = process.env.PORT || 3000;
 
 // ========== ゲーム定数 ==========
 const BOX_CONTENTS = [
-  { type: "coin",   label: "コイン",         value: 10,  emoji: "🪙" },
-  { type: "coin",   label: "コイン",         value: 10,  emoji: "🪙" },
-  { type: "coin",   label: "コイン",         value: 10,  emoji: "🪙" },
-  { type: "coin",   label: "コイン",         value: 20,  emoji: "💰" },
-  { type: "coin",   label: "コイン",         value: 20,  emoji: "💰" },
-  { type: "coin",   label: "大金貨",         value: 50,  emoji: "💎" },
-  { type: "rare",   label: "魔法の剣",       value: 80,  emoji: "⚔️"  },
-  { type: "rare",   label: "竜のウロコ",     value: 100, emoji: "🐉" },
-  { type: "rare",   label: "古代の宝石",     value: 120, emoji: "💠" },
-  { type: "bomb",   label: "爆弾！",         value: 0,   emoji: "💣" },
-  { type: "bomb",   label: "呪いの箱",       value: 0,   emoji: "☠️"  },
-  { type: "bomb",   label: "大爆発！",       value: 0,   emoji: "🔥" },
+  { type: "coin", label: "コイン",     value: 10,  emoji: "🪙" },
+  { type: "coin", label: "コイン",     value: 10,  emoji: "🪙" },
+  { type: "coin", label: "コイン",     value: 10,  emoji: "🪙" },
+  { type: "coin", label: "コイン",     value: 20,  emoji: "💰" },
+  { type: "coin", label: "コイン",     value: 20,  emoji: "💰" },
+  { type: "coin", label: "大金貨",     value: 50,  emoji: "💎" },
+  { type: "rare", label: "魔法の剣",   value: 80,  emoji: "⚔️"  },
+  { type: "rare", label: "竜のウロコ", value: 100, emoji: "🐉" },
+  { type: "rare", label: "古代の宝石", value: 120, emoji: "💠" },
+  { type: "bomb", label: "爆弾！",     value: 0,   emoji: "💣" },
+  { type: "bomb", label: "呪いの箱",   value: 0,   emoji: "☠️"  },
+  { type: "bomb", label: "大爆発！",   value: 0,   emoji: "🔥" },
 ];
 
 const MAX_BOXES_PER_ROUND = 8;
 
 // ========== 部屋管理 ==========
-const rooms = {}; // roomId -> RoomState
+const rooms = {};
 
-function generateRoomId() {
+function generateId() {
   return Math.random().toString(36).substr(2, 6).toUpperCase();
 }
 
 function createRoom(hostId, hostName) {
-  const roomId = generateRoomId();
+  const roomId = generateId();
   rooms[roomId] = {
     id: roomId,
     phase: "lobby",
@@ -57,18 +52,15 @@ function createRoom(hostId, hostName) {
     boxes: [],
     openedBoxes: [],
     currentTurnIndex: 0,
-    startPlayerIndex: -1, // ← 【追加】スタートプレイヤーのインデックス管理
-    escapedThisRound: [],
-    eliminatedThisRound: [],
+    turnOrder: [],
     log: [],
+    endingRound: false, // 二重呼び出し防止フラグ
   };
   return roomId;
 }
 
 function getRoomByPlayer(playerId) {
-  return Object.values(rooms).find(r =>
-    r.players.some(p => p.id === playerId)
-  );
+  return Object.values(rooms).find(r => r.players.some(p => p.id === playerId));
 }
 
 function getPlayer(room, playerId) {
@@ -77,31 +69,16 @@ function getPlayer(room, playerId) {
 
 // ========== 宝箱生成 ==========
 function generateBoxes() {
-  const coins = BOX_CONTENTS.filter(c => c.type === 'coin');
-  const bombs = BOX_CONTENTS.filter(c => c.type === 'bomb');
-  const rares = BOX_CONTENTS.filter(c => c.type === 'rare');
-
-  // 【追加】最低1つずつコインと爆弾を確定させる
-  const pickedCoin = coins.splice(Math.floor(Math.random() * coins.length), 1)[0];
-  const pickedBomb = bombs.splice(Math.floor(Math.random() * bombs.length), 1)[0];
-
-  // 残りから6つ選ぶ
-  const remainingPool = [...coins, ...bombs, ...rares];
-  for (let i = remainingPool.length - 1; i > 0; i--) {
+  const pool = [...BOX_CONTENTS];
+  for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [remainingPool[i], remainingPool[j]] = [remainingPool[j], remainingPool[i]];
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  const pickedOthers = remainingPool.slice(0, MAX_BOXES_PER_ROUND - 2);
-
-  // 確定枠とランダム枠を合わせて再度シャッフル
-  const finalPool = [pickedCoin, pickedBomb, ...pickedOthers];
-  for (let i = finalPool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [finalPool[i], finalPool[j]] = [finalPool[j], finalPool[i]];
-  }
-
-  return finalPool.map((item, idx) => ({
-    id: idx, opened: false, content: null, _content: item,
+  return pool.slice(0, MAX_BOXES_PER_ROUND).map((item, idx) => ({
+    id: idx,
+    opened: false,
+    content: null,
+    _content: item,
   }));
 }
 
@@ -111,8 +88,7 @@ function startRound(room) {
   room.phase = "playing";
   room.boxes = generateBoxes();
   room.openedBoxes = [];
-  room.escapedThisRound = [];
-  room.eliminatedThisRound = [];
+  room.endingRound = false;
   room.currentTurnIndex = 0;
 
   const alive = room.players.filter(p => !p.eliminated);
@@ -122,17 +98,8 @@ function startRound(room) {
     p.eliminatedThisRound = false;
   });
 
-  // 【追加】スタートプレイヤーを毎ターンローテーションさせる
-if (alive.length === 0) return; // 安全策を追加
-room.startPlayerIndex = (room.startPlayerIndex + 1) % alive.length;
-  const ordered = [
-    ...alive.slice(room.startPlayerIndex),
-    ...alive.slice(0, room.startPlayerIndex)
-  ];
-  room.turnOrder = ordered.map(p => p.id);
-  
-  const startPlayer = getPlayer(room, room.turnOrder[0]);
-  addLog(room, `⚔️ ラウンド ${room.round} 開始！ (先攻: ${startPlayer.name})`);
+  room.turnOrder = alive.map(p => p.id);
+  addLog(room, `⚔️ ラウンド ${room.round} 開始！`);
 }
 
 function addLog(room, message) {
@@ -151,21 +118,12 @@ function broadcastRoom(room) {
 }
 
 function buildPublicState(room) {
-  // 【追加】未開封の宝箱の中身をカウントする（ヒント機能用）
-  const unopened = room.boxes ? room.boxes.filter(b => !b.opened).map(b => b._content.type) : [];
-  const hints = {
-    coin: unopened.filter(t => t === 'coin').length,
-    rare: unopened.filter(t => t === 'rare').length,
-    bomb: unopened.filter(t => t === 'bomb').length,
-  };
-
   return {
     id: room.id,
     phase: room.phase,
     round: room.round,
     maxRounds: room.maxRounds,
     host: room.host,
-    hints: hints, // ← 【追加】ヒントをクライアントに送る
     players: room.players.map(p => ({
       id: p.id,
       name: p.name,
@@ -174,7 +132,6 @@ function buildPublicState(room) {
       escaped: p.escaped,
       eliminated: p.eliminated,
       eliminatedThisRound: p.eliminatedThisRound,
-      isReady: p.isReady, // ← 【追加】準備完了フラグ
       connected: p.ws && p.ws.readyState === WebSocket.OPEN,
     })),
     boxes: room.boxes.map(b => ({
@@ -188,34 +145,28 @@ function buildPublicState(room) {
 }
 
 // ========== ターン進行 ==========
+// 戻り値: true=次のプレイヤーへ進んだ / false=アクティブなプレイヤーがいない
 function advanceTurn(room) {
-  if (!room.turnOrder) return;
-  // アクティブなプレイヤーだけスキップ
+  if (!room.turnOrder || room.turnOrder.length === 0) return false;
+
   const activePlayers = room.players.filter(
     p => !p.eliminated && !p.escaped && !p.eliminatedThisRound
   );
-  if (activePlayers.length === 0) {
-    endRound(room);
-    return;
-  }
+  if (activePlayers.length === 0) return false;
 
-  // 次のアクティブプレイヤーへ
   let tries = 0;
   do {
     room.currentTurnIndex = (room.currentTurnIndex + 1) % room.turnOrder.length;
     tries++;
-    if (tries > room.turnOrder.length) {
-      endRound(room);
-      return;
-    }
+    if (tries > room.turnOrder.length) return false;
   } while (!isActivePlayer(room, room.turnOrder[room.currentTurnIndex]));
+
+  return true;
 }
 
 function isActivePlayer(room, playerId) {
   const p = getPlayer(room, playerId);
-  // 修正: 接続が切れているプレイヤーも「アクティブではない」とみなしてスキップさせる
-  return p && !p.eliminated && !p.escaped && !p.eliminatedThisRound && 
-         (p.ws && p.ws.readyState === WebSocket.OPEN);
+  return p && !p.eliminated && !p.escaped && !p.eliminatedThisRound;
 }
 
 function getCurrentPlayer(room) {
@@ -223,83 +174,21 @@ function getCurrentPlayer(room) {
   return getPlayer(room, room.turnOrder[room.currentTurnIndex]);
 }
 
-// ========== 宝箱を開ける ==========
-function openBox(room, playerId, boxId) {
-  const player = getPlayer(room, playerId);
-  const box = room.boxes.find(b => b.id === boxId);
-
-  if (!box || box.opened) return { error: "その宝箱は既に開いています" };
-  if (!player || player.escaped || player.eliminatedThisRound) return { error: "あなたはこのラウンドで行動できません" };
-
-  const current = getCurrentPlayer(room);
-  if (!current || current.id !== playerId) return { error: "あなたのターンではありません" };
-
-  box.opened = true;
-  box.content = box._content;
-  room.openedBoxes.push(box);
-
-if (box._content.type === "bomb") {
-    if (player.roundCoins === 0) {
-      // 【追加】獲得コイン0の時に爆弾を引いたペナルティ
-      player.totalCoins = Math.max(0, player.totalCoins - 10);
-      addLog(room, `💣 ${player.name} は手ぶらで ${box._content.emoji} を引いた！所持コインから10失った！`);
-    } else {
-      player.roundCoins = 0;
-      addLog(room, `💣 ${player.name} が ${box._content.emoji} を引いた！ラウンド獲得物消滅！`);
-    }
-    player.eliminatedThisRound = true;
-    room.eliminatedThisRound.push(playerId);
-  } else {
-    player.roundCoins += box._content.value;
-    addLog(room, `${player.name} が ${box._content.emoji}${box._content.label}（+${box._content.value}）を獲得！`);
-  }
-
-  // 宝箱が全部開いたら強制終了
-  const remainingBoxes = room.boxes.filter(b => !b.opened);
-  if (remainingBoxes.length === 0) {
-    endRound(room);
-    return { ok: true };
-  }
-
-  advanceTurn(room);
-
-  // 全員行動不能ならラウンド終了
-  const active = room.players.filter(p => !p.eliminated && !p.escaped && !p.eliminatedThisRound);
-  if (active.length === 0) endRound(room);
-
-  return { ok: true };
-}
-
-// ========== 脱出 ==========
-function escape(room, playerId) {
-  const player = getPlayer(room, playerId);
-  if (!player || player.escaped || player.eliminatedThisRound) return { error: "行動できません" };
-
-  const current = getCurrentPlayer(room);
-  if (!current || current.id !== playerId) return { error: "あなたのターンではありません" };
-
-  player.escaped = true;
-  room.escapedThisRound.push(playerId);
-  addLog(room, `🏃 ${player.name} が脱出！${player.roundCoins}コインを安全に確保`);
-
-  advanceTurn(room);
-
-  const active = room.players.filter(p => !p.eliminated && !p.escaped && !p.eliminatedThisRound);
-  if (active.length === 0) endRound(room);
-
-  return { ok: true };
-}
-
 // ========== ラウンド終了 ==========
 function endRound(room) {
+  // 二重呼び出し防止
+  if (room.endingRound || room.phase === "roundEnd" || room.phase === "gameOver") return;
+  room.endingRound = true;
   room.phase = "roundEnd";
 
-  // 脱出成功者はラウンドコイン確定
+  // 脱出済み（escaped=true）のプレイヤーのみコインを確定
+  // ※宝箱が尽きた場合は呼び出し前に escaped=true にセットしてから呼ぶこと
   room.players.forEach(p => {
     if (p.escaped) {
       p.totalCoins += p.roundCoins;
+      addLog(room, `✅ ${p.name} が ${p.roundCoins}コインを持ち帰った！（合計: ${p.totalCoins}）`);
     }
-    // 爆弾を踏んだ人はroundCoinsリセット済み
+    // リセット
     p.roundCoins = 0;
     p.escaped = false;
     p.eliminatedThisRound = false;
@@ -308,7 +197,6 @@ function endRound(room) {
   addLog(room, `🏁 ラウンド ${room.round} 終了`);
   broadcastRoom(room);
 
-  // 最終ラウンド判定
   if (room.round >= room.maxRounds) {
     setTimeout(() => endGame(room), 3000);
   } else {
@@ -327,12 +215,77 @@ function endGame(room) {
   broadcastRoom(room);
 }
 
-// ========== WebSocket ハンドラ ==========
-// server.js の 217行目付近からの WebSocket ハンドラを以下のように修正します
+// ========== 宝箱を開ける ==========
+function openBox(room, playerId, boxId) {
+  const player = getPlayer(room, playerId);
+  const box = room.boxes.find(b => b.id === boxId);
 
+  if (!box || box.opened) return { error: "その宝箱は既に開いています" };
+  if (!player || player.escaped || player.eliminatedThisRound) return { error: "あなたはこのラウンドで行動できません" };
+
+  const current = getCurrentPlayer(room);
+  if (!current || current.id !== playerId) return { error: "あなたのターンではありません" };
+
+  box.opened = true;
+  box.content = box._content;
+  room.openedBoxes.push(box);
+
+  if (box._content.type === "bomb") {
+    player.roundCoins = 0;
+    player.eliminatedThisRound = true;
+    addLog(room, `💣 ${player.name} が ${box._content.emoji}${box._content.label} を引いた！ラウンド獲得物消滅！`);
+  } else {
+    player.roundCoins += box._content.value;
+    addLog(room, `${player.name} が ${box._content.emoji}${box._content.label}（+${box._content.value}）を獲得！`);
+  }
+
+  // 宝箱が全部開いたら → 残存プレイヤー全員を強制脱出扱いにしてスコア確定
+  const remainingBoxes = room.boxes.filter(b => !b.opened);
+  if (remainingBoxes.length === 0) {
+    room.players.forEach(p => {
+      if (!p.eliminated && !p.eliminatedThisRound && !p.escaped) {
+        p.escaped = true;
+      }
+    });
+    endRound(room);
+    return { ok: true };
+  }
+
+  // ターンを進める。進める先がなければラウンド終了
+  const canContinue = advanceTurn(room);
+  if (!canContinue) {
+    endRound(room);
+  }
+
+  return { ok: true };
+}
+
+// ========== 脱出 ==========
+function escape(room, playerId) {
+  const player = getPlayer(room, playerId);
+  if (!player || player.escaped || player.eliminatedThisRound) return { error: "行動できません" };
+
+  const current = getCurrentPlayer(room);
+  if (!current || current.id !== playerId) return { error: "あなたのターンではありません" };
+
+  player.escaped = true;
+  addLog(room, `🏃 ${player.name} が脱出！${player.roundCoins}コインを安全に確保`);
+
+  const canContinue = advanceTurn(room);
+  if (!canContinue) {
+    endRound(room);
+  }
+
+  return { ok: true };
+}
+
+// ========== WebSocket ハンドラ ==========
 wss.on("connection", (ws) => {
   let playerId = null;
-  let currentRoomId = null; // ← 【追加】この接続が現在いるルームIDを直接保持する
+
+  // Render等でのタイムアウト対策 ping/pong
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
 
   ws.on("message", (raw) => {
     let msg;
@@ -340,139 +293,72 @@ wss.on("connection", (ws) => {
 
     switch (msg.type) {
 
-// ===== 準備完了の切り替え (switch文の中に追加) =====
-      case "toggleReady": {
-        const room = rooms[currentRoomId];
-        if (!room || room.phase !== "lobby") return;
-        const player = getPlayer(room, playerId);
-        if (player && room.host !== playerId) {
-          player.isReady = !player.isReady;
-          broadcastRoom(room);
-        }
-        break;
-      }
-
-// switch文の中に追加する例
-case "leaveRoom": {
-  const room = rooms[currentRoomId];
-  if (!room) return;
-  
-  if (playerId === room.host) {
-    // ホスト退出なら全員に通知して部屋削除
-    room.players.forEach(p => {
-      if (p.ws) p.ws.send(JSON.stringify({ type: "error", message: "ホストが退室したため解散しました" }));
-    });
-    delete rooms[currentRoomId];
-  } else {
-    room.players = room.players.filter(p => p.id !== playerId);
-    broadcastRoom(room);
-  }
-  break;
-}
-
-      // ===== ゲーム開始 (startGameの判定を以下のように修正) =====
-      case "startGame": {
-        const room = rooms[currentRoomId];
-        if (!room) return;
-        if (room.host !== playerId) return;
-        
-        // 【追加】ホスト以外の全員が準備完了しているかチェック
-const notReady = room.players.some(p => 
-  p.id !== room.host && 
-  !p.isReady && 
-  (p.ws && p.ws.readyState === WebSocket.OPEN)
-);
-        if (notReady) {
-          ws.send(JSON.stringify({ type: "error", message: "全員が準備完了になるまで開始できません" }));
-          return;
-        }
-        if (room.players.length < 2) {
-          ws.send(JSON.stringify({ type: "error", message: "2人以上必要です" }));
-          return;
-        }
-        startRound(room);
-        broadcastRoom(room);
-        break;
-      }
-
-      // ===== 部屋を作成 =====
       case "createRoom": {
-        playerId = msg.playerId || generateRoomId() + "_p";
+        playerId = msg.playerId || generateId() + "_p";
         const roomId = createRoom(playerId, msg.name);
-        currentRoomId = roomId; // ← 【追加】
         const room = rooms[roomId];
         room.players.push({
-  id: playerId,
-  name: msg.name || "プレイヤー1",
-  ws,
-  totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
-  isReady: true // ← 【追加】ホストは常に準備完了扱いにする
-});
+          id: playerId,
+          name: msg.name || "プレイヤー1",
+          ws,
+          totalCoins: 0,
+          roundCoins: 0,
+          escaped: false,
+          eliminated: false,
+          eliminatedThisRound: false,
+        });
         ws.send(JSON.stringify({ type: "joined", roomId, playerId }));
         broadcastRoom(room);
         break;
       }
 
-      // ===== 部屋に参加 =====
       case "joinRoom": {
         const room = rooms[msg.roomId];
-        if (!room) {
-          ws.send(JSON.stringify({ type: "error", message: "部屋が見つかりません" }));
-          return;
-        }
-        if (room.phase !== "lobby") {
-          ws.send(JSON.stringify({ type: "error", message: "ゲームはすでに始まっています" }));
-          return;
-        }
-        if (room.players.length >= 8) {
-          ws.send(JSON.stringify({ type: "error", message: "部屋が満員です" }));
-          return;
-        }
-
-        // ▼ 【修正】同じブラウザの別タブでテストした時のID重複バグを防ぐ
-        let joinPlayerId = msg.playerId;
-        if (!joinPlayerId || room.players.some(p => p.id === joinPlayerId)) {
-          joinPlayerId = generateRoomId() + "_p";
-        }
-        playerId = joinPlayerId;
-        currentRoomId = room.id; // ← 【追加】
-
+        if (!room) { ws.send(JSON.stringify({ type: "error", message: "部屋が見つかりません" })); return; }
+        if (room.phase !== "lobby") { ws.send(JSON.stringify({ type: "error", message: "ゲームはすでに始まっています" })); return; }
+        if (room.players.length >= 8) { ws.send(JSON.stringify({ type: "error", message: "部屋が満員です" })); return; }
+        playerId = msg.playerId || generateId() + "_p";
         room.players.push({
-  id: playerId,
-  name: msg.name || `プレイヤー${room.players.length + 1}`,
-  ws,
-  totalCoins: 0, roundCoins: 0, escaped: false, eliminated: false, eliminatedThisRound: false,
-  isReady: false // ← 【追加】参加者は最初は準備未完了にする
-});
+          id: playerId,
+          name: msg.name || `プレイヤー${room.players.length + 1}`,
+          ws,
+          totalCoins: 0,
+          roundCoins: 0,
+          escaped: false,
+          eliminated: false,
+          eliminatedThisRound: false,
+        });
         addLog(room, `👤 ${msg.name} が参加しました`);
         ws.send(JSON.stringify({ type: "joined", roomId: room.id, playerId }));
         broadcastRoom(room);
         break;
       }
 
-      // ===== 以下、getRoomByPlayer を使わず rooms[currentRoomId] を使うように一貫して修正 =====
+      case "startGame": {
+        const room = getRoomByPlayer(playerId);
+        if (!room) return;
+        if (room.host !== playerId) { ws.send(JSON.stringify({ type: "error", message: "ホストのみ開始できます" })); return; }
+        if (room.players.length < 2) { ws.send(JSON.stringify({ type: "error", message: "2人以上必要です" })); return; }
+        startRound(room);
+        broadcastRoom(room);
+        break;
+      }
 
       case "openBox": {
-        const room = rooms[currentRoomId]; // ← 【修正】
+        const room = getRoomByPlayer(playerId);
         if (!room || room.phase !== "playing") return;
         const result = openBox(room, playerId, msg.boxId);
-        if (result.error) {
-          ws.send(JSON.stringify({ type: "error", message: result.error }));
-        } else {
-          broadcastRoom(room);
-        }
+        if (result.error) { ws.send(JSON.stringify({ type: "error", message: result.error })); }
+        else { broadcastRoom(room); }
         break;
       }
 
       case "escape": {
-        const room = rooms[currentRoomId]; // ← 【修正】
+        const room = getRoomByPlayer(playerId);
         if (!room || room.phase !== "playing") return;
         const result = escape(room, playerId);
-        if (result.error) {
-          ws.send(JSON.stringify({ type: "error", message: result.error }));
-        } else {
-          broadcastRoom(room);
-        }
+        if (result.error) { ws.send(JSON.stringify({ type: "error", message: result.error })); }
+        else { broadcastRoom(room); }
         break;
       }
 
@@ -480,7 +366,6 @@ const notReady = room.players.some(p =>
         playerId = msg.playerId;
         const room = rooms[msg.roomId];
         if (!room) return;
-        currentRoomId = room.id; // ← 【追加】
         const player = getPlayer(room, playerId);
         if (player) {
           player.ws = ws;
@@ -493,8 +378,8 @@ const notReady = room.players.some(p =>
   });
 
   ws.on("close", () => {
-    if (!playerId || !currentRoomId) return; // ← 【修正】
-    const room = rooms[currentRoomId];       // ← 【修正】
+    if (!playerId) return;
+    const room = getRoomByPlayer(playerId);
     if (!room) return;
     const player = getPlayer(room, playerId);
     if (player) {
@@ -503,6 +388,17 @@ const notReady = room.players.some(p =>
     }
   });
 });
+
+// ping/pong で死活監視（30秒ごと）
+const pingInterval = setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (!ws.isAlive) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on("close", () => clearInterval(pingInterval));
 
 server.listen(PORT, () => {
   console.log(`🎮 宝箱ダンジョン サーバー起動: ws://localhost:${PORT}`);

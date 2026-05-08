@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TREASURE DUNGEON</title>
+<title>宝箱ダンジョン</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -549,25 +549,6 @@
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--surface); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-/* ヒントバー＆準備バッジのスタイル */
-  .hints-bar {
-    display: flex; justify-content: center; gap: 1.5rem;
-    background: rgba(0,0,0,0.4); border: 1px solid var(--border);
-    padding: 0.6rem 1rem; border-radius: 8px; margin-bottom: 0.5rem;
-  }
-  .hint-item { font-family: 'Cinzel', serif; font-size: 0.95rem; color: var(--text); }
-  .hint-emoji { font-size: 1.1rem; margin-right: 0.2rem; }
-  #hint-coin { color: var(--gold); font-weight: bold; }
-  #hint-rare { color: var(--rare); font-weight: bold; }
-  #hint-bomb { color: var(--red); font-weight: bold; }
-
-  .badge-ready {
-    margin-left: auto; background: rgba(39,174,96,.2); color: #27ae60;
-    border: 1px solid rgba(39,174,96,.4); border-radius: 4px;
-    padding: .15rem .5rem; font-size: .7rem; font-family: 'Cinzel', serif;
-  }
-
 </style>
 </head>
 <body>
@@ -576,7 +557,7 @@
   <!-- ═══ LOBBY ═══ -->
   <div id="screen-lobby">
     <div class="title-block">
-      <h1>🗝 TREASURE DUNGEON</h1>
+      <h1>🗝 宝箱ダンジョン</h1>
       <p>Treasure Dungeon · Online Board Game</p>
     </div>
 
@@ -623,13 +604,9 @@
       <h3>🛡 参加者 <span id="waiting-count">0</span>/8</h3>
     </div>
 
-<div style="width:100%; max-width:460px;">
+    <div style="width:100%; max-width:460px;">
       <button class="btn btn-green" id="btn-start" onclick="startGame()" style="display:none">
         ⚔️ ゲーム開始！
-      </button>
-      <!-- 【追加】参加者用の準備完了ボタン -->
-      <button class="btn btn-outline" id="btn-ready" onclick="toggleReady()" style="display:none">
-        ✅ 準備完了にする
       </button>
       <p id="waiting-msg" style="text-align:center; color:var(--muted); font-size:.85rem; margin-top:.5rem">
         ホストが開始するまでお待ちください…
@@ -640,21 +617,13 @@
   <!-- ═══ GAME ═══ -->
   <div id="screen-game">
     <div class="game-header">
-      <div class="game-title">🗝 TREASURE DUNGEON</div>
+      <div class="game-title">🗝 宝箱ダンジョン</div>
       <div class="round-info">ラウンド <span id="g-round">1</span> / <span id="g-max-round">5</span></div>
     </div>
 
     <div class="turn-banner" id="turn-banner">— 待機中 —</div>
 
-<div class="players-row" id="players-row"></div>
-
-    <!-- 【追加】残り宝箱のヒントバー -->
-    <div class="hints-bar" id="hints-bar">
-      <div class="hint-item"><span class="hint-emoji">🪙</span> コイン: <span id="hint-coin">0</span></div>
-      <div class="hint-item"><span class="hint-emoji">💎</span> レア: <span id="hint-rare">0</span></div>
-      <div class="hint-item"><span class="hint-emoji">💣</span> 爆弾: <span id="hint-bomb">0</span></div>
-    </div>
-
+    <div class="players-row" id="players-row"></div>
 
     <div class="boxes-section">
       <h3>🗝 宝箱</h3>
@@ -724,10 +693,6 @@ function connectWS(callback) {
     showToast("接続が切れました。再接続中…");
     setTimeout(() => reconnect(), 3000);
   };
-}
-
-function toggleReady() {
-  send({ type: "toggleReady" });
 }
 
 function reconnect() {
@@ -800,7 +765,7 @@ function copyRoomId() {
 function onOpenBox() {
   if (selectedBoxId === null) { showToast("宝箱を選択してください"); return; }
   send({ type: "openBox", boxId: selectedBoxId });
-  selectedBoxId = null; // ここでリセット
+  selectedBoxId = null;
   renderBoxes();
 }
 
@@ -814,7 +779,7 @@ function selectBox(id) {
   if (!box || box.opened) return;
   selectedBoxId = (selectedBoxId === id) ? null : id;
   renderBoxes();
-  renderActions(); // ← 【追加】この行を追加してボタンの表示を更新する
+  renderActions(); // ← これがなかったためボタンが有効にならなかった
 }
 
 function isMyTurn() {
@@ -862,49 +827,27 @@ function render() {
 }
 
 // ── Waiting ──
-// ── Waiting ──
 function renderWaiting() {
   if (!gameState) return;
   const { players, host } = gameState;
+  document.getElementById("waiting-count").textContent = players.length;
 
   const container = document.getElementById("waiting-players");
-  container.innerHTML = `<h3>🛡 参加者 <span id="waiting-count">${players.length}</span>/8</h3>`;
-
+  container.innerHTML = `<h3>🛡 参加者 <span>${players.length}</span>/8</h3>`;
   players.forEach(p => {
-    const div = document.createElement("div");
-    div.className = "player-item";
-    // 修正: p.isReady を参照
-    div.innerHTML = `
-      <span>${p.id === host ? "👑" : "👤"} ${escHtml(p.name)}</span>
-      ${p.isReady ? '<span class="badge-ready">READY</span>' : ""}
+    const item = document.createElement("div");
+    item.className = "player-item";
+    item.innerHTML = `
+      <div class="player-avatar">${p.name[0]}</div>
+      <div class="player-name">${escHtml(p.name)}${p.id === myPlayerId ? ' <span style="color:var(--gold);font-size:.75rem">(あなた)</span>' : ''}</div>
+      ${p.id === host ? '<span class="badge-host">HOST</span>' : ''}
     `;
-    container.appendChild(div);
+    container.appendChild(item);
   });
 
-  // ボタン表示の制御
-  const btnStart = document.getElementById("btn-start");
-  const btnReady = document.getElementById("btn-ready");
-  const isHost = (myPlayerId === host);
-
-  if (isHost) {
-    btnStart.style.display = "block";
-    btnReady.style.display = "none";
-    // 全員準備完了（ホスト除く）なら開始可能
-    const allReady = players.every(p => p.id === host || p.isReady);
-    btnStart.disabled = !allReady || players.length < 2;
-  } else {
-    btnStart.style.display = "none";
-    btnReady.style.display = "block";
-    const me = players.find(p => p.id === myPlayerId);
-    btnReady.textContent = me && me.isReady ? "✅ 準備完了を解除" : "👍 準備完了にする";
-  }
-}
-
-function leaveRoom() {
-  if (confirm("部屋を離れますか？")) {
-    socket.emit("leave-room");
-    location.reload(); // ページをリロードして初期画面に戻る
-  }
+  const isHost = gameState.host === myPlayerId;
+  document.getElementById("btn-start").style.display = isHost ? "block" : "none";
+  document.getElementById("waiting-msg").style.display = isHost ? "none" : "block";
 }
 
 // ── Game ──
@@ -912,13 +855,6 @@ function renderGame() {
   if (!gameState) return;
   document.getElementById("g-round").textContent = gameState.round;
   document.getElementById("g-max-round").textContent = gameState.maxRounds;
-
-  // 【追加】ヒント情報の更新
-  if (gameState.hints) {
-    document.getElementById("hint-coin").textContent = gameState.hints.coin;
-    document.getElementById("hint-rare").textContent = gameState.hints.rare;
-    document.getElementById("hint-bomb").textContent = gameState.hints.bomb;
-  }
 
   renderTurnBanner();
   renderPlayers();
@@ -1102,14 +1038,6 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter" && isMyTurn() && selectedBoxId !== null) onOpenBox();
   if (e.key === "Escape") { selectedBoxId = null; renderBoxes(); }
 });
-
-socket.on("room-closed", (message) => {
-  alert(message);
-  location.reload();
-});
-
 </script>
 </body>
 </html>
-
-
