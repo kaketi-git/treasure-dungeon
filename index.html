@@ -673,33 +673,44 @@
 const WS_URL = location.protocol === "https:"
   ? `wss://${location.host}`
   : `ws://${location.hostname}:3000`;
-let ws = null;
-let myPlayerId = localStorage.getItem("playerId") || null;
-let myRoomId   = null;
-let myName     = "";
+
+let ws          = null;
+let myPlayerId  = null;   // localStorageは使わない（古いIDが残って混乱する原因）
+let myRoomId    = null;
+let myName      = "";
 let selectedBoxId = null;
-let gameState  = null;
-let prevPhase  = null;
+let gameState   = null;
+let prevPhase   = null;
+let isJoined    = false;  // joined済みかどうかのフラグ
 
 // ══════════════════════════════════════════
 //  WEBSOCKET
 // ══════════════════════════════════════════
 function connectWS(callback) {
+  // 既に接続中なら再利用
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    callback && callback();
+    return;
+  }
   ws = new WebSocket(WS_URL);
-  ws.onopen  = () => callback && callback();
-  ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
-  ws.onerror = () => showToast("サーバーに接続できません");
-  ws.onclose = () => {
-    showToast("接続が切れました。再接続中…");
-    setTimeout(() => reconnect(), 3000);
+  ws.onopen    = () => { callback && callback(); };
+  ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch(err) { console.error(err); } };
+  ws.onerror   = () => showToast("サーバーに接続できません");
+  ws.onclose   = () => {
+    if (isJoined) {
+      showToast("接続が切れました。再接続中…");
+      setTimeout(() => reconnectWS(), 3000);
+    }
   };
 }
 
-function reconnect() {
+function reconnectWS() {
   if (!myPlayerId || !myRoomId) return;
-  connectWS(() => {
-    send({ type: "reconnect", playerId: myPlayerId, roomId: myRoomId });
-  });
+  ws = new WebSocket(WS_URL);
+  ws.onopen    = () => send({ type: "reconnect", playerId: myPlayerId, roomId: myRoomId });
+  ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch(err) { console.error(err); } };
+  ws.onerror   = () => { setTimeout(() => reconnectWS(), 5000); };
+  ws.onclose   = () => { setTimeout(() => reconnectWS(), 5000); };
 }
 
 function send(obj) {
@@ -713,12 +724,15 @@ function send(obj) {
 // ══════════════════════════════════════════
 function handleMessage(msg) {
   switch (msg.type) {
+
     case "joined":
+      // IDとルームを記憶するだけ。画面遷移はstateに任せる
       myPlayerId = msg.playerId;
       myRoomId   = msg.roomId;
-      localStorage.setItem("playerId", myPlayerId);
+      isJoined   = true;
       document.getElementById("display-room-id").textContent = myRoomId;
-      showScreen("waiting");
+      // gameStateがまだなければとりあえずwaitingを表示
+      if (!gameState) showScreen("waiting");
       break;
 
     case "state":
@@ -738,7 +752,7 @@ function handleMessage(msg) {
 function createRoom() {
   myName = document.getElementById("input-name").value.trim() || "名無し";
   connectWS(() => {
-    send({ type: "createRoom", name: myName, playerId: myPlayerId });
+    send({ type: "createRoom", name: myName });
   });
 }
 
@@ -747,7 +761,7 @@ function joinRoom() {
   myName = document.getElementById("input-name").value.trim() || "名無し";
   if (!roomId) { showToast("ルームIDを入力してください"); return; }
   connectWS(() => {
-    send({ type: "joinRoom", roomId, name: myName, playerId: myPlayerId });
+    send({ type: "joinRoom", roomId, name: myName });
   });
 }
 
@@ -766,7 +780,6 @@ function onOpenBox() {
   if (selectedBoxId === null) { showToast("宝箱を選択してください"); return; }
   send({ type: "openBox", boxId: selectedBoxId });
   selectedBoxId = null;
-  renderBoxes();
 }
 
 function onEscape() {
@@ -779,11 +792,13 @@ function selectBox(id) {
   if (!box || box.opened) return;
   selectedBoxId = (selectedBoxId === id) ? null : id;
   renderBoxes();
-  renderActions(); // ← これがなかったためボタンが有効にならなかった
+  renderActions();
 }
 
 function isMyTurn() {
-  return gameState && gameState.currentTurn === myPlayerId && gameState.phase === "playing";
+  return gameState &&
+    gameState.phase === "playing" &&
+    gameState.currentTurn === myPlayerId;
 }
 
 function getMe() {
@@ -796,41 +811,43 @@ function isActiveMe() {
 }
 
 // ══════════════════════════════════════════
-//  RENDER
+//  RENDER（phaseだけで画面を決める）
 // ══════════════════════════════════════════
 function render() {
   if (!gameState) return;
   const { phase } = gameState;
 
-  // 画面切り替え
+  // ターンが変わったらボックス選択をリセット
+  if (prevPhase !== phase || gameState.currentTurn !== (prevTurn || null)) {
+    selectedBoxId = null;
+  }
+
   if (phase === "lobby") {
     showScreen("waiting");
     renderWaiting();
-  } else if (phase === "playing" || phase === "roundEnd") {
+  } else if (phase === "playing") {
+    showScreen("game");
+    document.getElementById("overlay-roundend").style.display = "none";
+    renderGame();
+  } else if (phase === "roundEnd") {
     showScreen("game");
     renderGame();
+    if (prevPhase === "playing") showRoundEnd();
   } else if (phase === "gameOver") {
     showScreen("game");
     renderGame();
     showGameOver();
   }
 
-  // ラウンドエンドオーバーレイ
-  if (phase === "roundEnd" && prevPhase === "playing") {
-    showRoundEnd();
-  }
-  if (phase === "playing") {
-    document.getElementById("overlay-roundend").style.display = "none";
-  }
-
   prevPhase = phase;
+  prevTurn  = gameState.currentTurn;
 }
+let prevTurn = null;
 
 // ── Waiting ──
 function renderWaiting() {
   if (!gameState) return;
   const { players, host } = gameState;
-  document.getElementById("waiting-count").textContent = players.length;
 
   const container = document.getElementById("waiting-players");
   container.innerHTML = `<h3>🛡 参加者 <span>${players.length}</span>/8</h3>`;
@@ -838,7 +855,7 @@ function renderWaiting() {
     const item = document.createElement("div");
     item.className = "player-item";
     item.innerHTML = `
-      <div class="player-avatar">${p.name[0]}</div>
+      <div class="player-avatar">${escHtml(p.name[0])}</div>
       <div class="player-name">${escHtml(p.name)}${p.id === myPlayerId ? ' <span style="color:var(--gold);font-size:.75rem">(あなた)</span>' : ''}</div>
       ${p.id === host ? '<span class="badge-host">HOST</span>' : ''}
     `;
@@ -855,7 +872,6 @@ function renderGame() {
   if (!gameState) return;
   document.getElementById("g-round").textContent = gameState.round;
   document.getElementById("g-max-round").textContent = gameState.maxRounds;
-
   renderTurnBanner();
   renderPlayers();
   renderBoxes();
@@ -873,12 +889,11 @@ function renderTurnBanner() {
     banner.className = "turn-banner";
     return;
   }
-
   if (myTurn) {
     banner.textContent = "⚔️ あなたのターンです！宝箱を選んでください";
     banner.className = "turn-banner my-turn";
   } else if (currentPlayer) {
-    banner.textContent = `⏳ ${currentPlayer.name} のターン…`;
+    banner.textContent = `⏳ ${escHtml(currentPlayer.name)} のターン…`;
     banner.className = "turn-banner";
   } else {
     banner.textContent = "— 待機中 —";
@@ -898,9 +913,9 @@ function renderPlayers() {
       (p.eliminatedThisRound ? " bombed" : "");
 
     let badge = "";
-    if (p.id === myPlayerId) badge += `<span class="ps-badge you">YOU</span>`;
-    if (p.escaped) badge += `<span class="ps-badge escaped">脱出済</span>`;
-    if (p.eliminatedThisRound) badge += `<span class="ps-badge bombed">💣爆死</span>`;
+    if (p.id === myPlayerId)      badge += `<span class="ps-badge you">YOU</span>`;
+    if (p.escaped)                badge += `<span class="ps-badge escaped">脱出済</span>`;
+    if (p.eliminatedThisRound)    badge += `<span class="ps-badge bombed">💣爆死</span>`;
 
     card.innerHTML = `
       <div class="ps-name">${escHtml(p.name)}</div>
@@ -919,13 +934,12 @@ function renderBoxes() {
 
   gameState.boxes.forEach(box => {
     const el = document.createElement("div");
-    const canClick = isMyTurn() && !box.opened && isActiveMe();
+    const myTurnActive = isMyTurn() && isActiveMe();
+    const canClick = myTurnActive && !box.opened;
     const isSelected = selectedBoxId === box.id;
 
     el.className = "box-card" + (canClick ? " clickable" : " not-clickable");
-    if (box.opened && box.content) {
-      el.classList.add("opened", box.content.type);
-    }
+    if (box.opened && box.content) el.classList.add("opened", box.content.type);
     if (isSelected) {
       el.style.borderColor = "var(--gold-glow)";
       el.style.boxShadow = "0 0 20px rgba(240,192,96,.5)";
@@ -946,8 +960,8 @@ function renderBoxes() {
 }
 
 function renderActions() {
-  const myTurn = isMyTurn();
-  document.getElementById("btn-open").disabled = !myTurn || selectedBoxId === null;
+  const myTurn = isMyTurn() && isActiveMe();
+  document.getElementById("btn-open").disabled   = !myTurn || selectedBoxId === null;
   document.getElementById("btn-escape").disabled = !myTurn;
   document.getElementById("action-row").style.opacity = myTurn ? "1" : "0.4";
 }
@@ -955,7 +969,7 @@ function renderActions() {
 function renderLog() {
   const list = document.getElementById("log-list");
   list.innerHTML = "";
-  (gameState.log || []).forEach((entry, i) => {
+  (gameState.log || []).forEach(entry => {
     const item = document.createElement("div");
     item.className = "log-item";
     item.textContent = entry.message;
@@ -966,16 +980,12 @@ function renderLog() {
 // ── Round End Overlay ──
 function showRoundEnd() {
   const overlay = document.getElementById("overlay-roundend");
-  const title   = document.getElementById("round-end-title");
-  const list    = document.getElementById("round-result-list");
-
-  title.textContent = `ラウンド ${gameState.round} 終了`;
+  document.getElementById("round-end-title").textContent = `ラウンド ${gameState.round} 終了`;
+  const list = document.getElementById("round-result-list");
   list.innerHTML = "";
-
-  const sorted = [...gameState.players].sort((a, b) => b.totalCoins - a.totalCoins);
-  sorted.forEach((p, i) => {
+  [...gameState.players].sort((a,b) => b.totalCoins - a.totalCoins).forEach((p, i) => {
     const li = document.createElement("li");
-    const rankClass = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+    const rankClass = ["gold","silver","bronze"][i] || "";
     li.innerHTML = `
       <span class="result-rank ${rankClass}">${["🥇","🥈","🥉"][i] || (i+1)+"."}</span>
       <span>${escHtml(p.name)}${p.id === myPlayerId ? " (あなた)" : ""}</span>
@@ -983,20 +993,17 @@ function showRoundEnd() {
     `;
     list.appendChild(li);
   });
-
   overlay.style.display = "flex";
 }
 
 // ── Game Over Overlay ──
 function showGameOver() {
   const overlay = document.getElementById("overlay-gameover");
-  const list    = document.getElementById("gameover-result-list");
+  const list = document.getElementById("gameover-result-list");
   list.innerHTML = "";
-
-  const sorted = [...gameState.players].sort((a, b) => b.totalCoins - a.totalCoins);
-  sorted.forEach((p, i) => {
+  [...gameState.players].sort((a,b) => b.totalCoins - a.totalCoins).forEach((p, i) => {
     const li = document.createElement("li");
-    const rankClass = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+    const rankClass = ["gold","silver","bronze"][i] || "";
     li.innerHTML = `
       <span class="result-rank ${rankClass}">${["🥇","🥈","🥉"][i] || (i+1)+"."}</span>
       <span>${escHtml(p.name)}${p.id === myPlayerId ? " (あなた)" : ""}</span>
@@ -1004,7 +1011,6 @@ function showGameOver() {
     `;
     list.appendChild(li);
   });
-
   overlay.style.display = "flex";
 }
 
@@ -1012,7 +1018,7 @@ function showGameOver() {
 //  UI HELPERS
 // ══════════════════════════════════════════
 function showScreen(name) {
-  ["lobby", "waiting", "game"].forEach(s => {
+  ["lobby","waiting","game"].forEach(s => {
     document.getElementById(`screen-${s}`).style.display = "none";
   });
   document.getElementById(`screen-${name}`).style.display = "flex";
@@ -1033,11 +1039,11 @@ function escHtml(str) {
     .replace(/"/g,"&quot;");
 }
 
-// ── 宝箱選択状態リセット (ターンが変わったとき) ──
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && isMyTurn() && selectedBoxId !== null) onOpenBox();
-  if (e.key === "Escape") { selectedBoxId = null; renderBoxes(); }
+  if (e.key === "Escape") { selectedBoxId = null; if(gameState) { renderBoxes(); renderActions(); } }
 });
+
 </script>
 </body>
 </html>
