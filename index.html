@@ -377,8 +377,38 @@
     font-size: .8rem;
     color: var(--muted);
     letter-spacing: .12em;
-    margin-bottom: .7rem;
+    margin-bottom: .5rem;
   }
+
+  /* 内訳バー */
+  .breakdown-bar {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+    margin-bottom: .7rem;
+    padding: .5rem .8rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: .8rem;
+  }
+  .breakdown-item {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    color: var(--muted);
+  }
+  .breakdown-item span.count {
+    font-family: 'Cinzel', serif;
+    font-size: .9rem;
+    font-weight: 700;
+  }
+  .breakdown-item.coin span.count { color: var(--gold); }
+  .breakdown-item.rare span.count { color: #b07fd4; }
+  .breakdown-item.bomb span.count { color: var(--red-glow); }
+  .breakdown-item.total span.count { color: var(--text); }
+  .breakdown-sep { color: var(--border); }
   .boxes-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
@@ -627,6 +657,13 @@
 
     <div class="boxes-section">
       <h3>🗝 宝箱</h3>
+      <div class="breakdown-bar" id="breakdown-bar">
+        <div class="breakdown-item total">未開封 <span class="count" id="bd-total">-</span> 個</div>
+        <span class="breakdown-sep">|</span>
+        <div class="breakdown-item coin">🪙 <span class="count" id="bd-coin">-</span></div>
+        <div class="breakdown-item rare">💠 <span class="count" id="bd-rare">-</span></div>
+        <div class="breakdown-item bomb">💣 <span class="count" id="bd-bomb">-</span></div>
+      </div>
       <div class="boxes-grid" id="boxes-grid"></div>
     </div>
 
@@ -931,6 +968,15 @@ function renderBoxes() {
   const grid = document.getElementById("boxes-grid");
   grid.innerHTML = "";
   if (!gameState.boxes) return;
+
+  // 内訳バーを更新
+  const bd = gameState.breakdown;
+  if (bd) {
+    document.getElementById("bd-total").textContent = bd.total;
+    document.getElementById("bd-coin").textContent  = bd.coin;
+    document.getElementById("bd-rare").textContent  = bd.rare;
+    document.getElementById("bd-bomb").textContent  = bd.bomb;
+  }
 
   gameState.boxes.forEach(box => {
     const el = document.createElement("div");

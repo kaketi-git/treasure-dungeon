@@ -118,6 +118,15 @@ function broadcastRoom(room) {
 }
 
 function buildPublicState(room) {
+  // 未開封の宝箱の内訳（中身は伏せたまま種類だけカウント）
+  const unopened = room.boxes.filter(b => !b.opened);
+  const breakdown = {
+    total:  unopened.length,
+    coin:   unopened.filter(b => b._content.type === "coin").length,
+    rare:   unopened.filter(b => b._content.type === "rare").length,
+    bomb:   unopened.filter(b => b._content.type === "bomb").length,
+  };
+
   return {
     id: room.id,
     phase: room.phase,
@@ -139,6 +148,7 @@ function buildPublicState(room) {
       opened: b.opened,
       content: b.opened ? b._content : null,
     })),
+    breakdown,
     currentTurn: room.turnOrder ? room.turnOrder[room.currentTurnIndex] : null,
     log: room.log.slice(0, 10),
   };
